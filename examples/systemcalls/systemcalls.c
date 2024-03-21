@@ -1,4 +1,10 @@
 #include "systemcalls.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <fcntl.h>
+#include <sys/wait.h>
 
 /**
  * @param cmd the command to execute with system()
@@ -16,7 +22,8 @@ bool do_system(const char *cmd)
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
-
+    int ret = system(cmd);
+    if (ret == -1) return false;
     return true;
 }
 
@@ -58,6 +65,27 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *
 */
+    pid_t childpid;
+    int status;
+
+    childpid = fork();
+
+    if (childpid < 0) {
+      // fork failed
+      exit(EXIT_FAILURE);
+    } else if (childpid == 0) {
+      // In child process
+      int ret = execv(command[0], command);
+      // printf("ret: %d\n", ret);
+      if (ret == -1) exit(EXIT_FAILURE);
+    } else {
+      // In parent process
+      wait(&status);
+      // printf("status: %d\n", status);
+      if (status != 0) {
+        return false;
+      }
+    }
 
     va_end(args);
 
@@ -93,7 +121,34 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *
 */
 
-    va_end(args);
+    pid_t childpid;
+    int status;
+
+    int fd = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0644);
+
+    childpid = fork();
+
+    if (childpid < 0) {
+      // fork failed
+      exit(EXIT_FAILURE);
+    } else if (childpid == 0) {
+      // In child process
+      if (dup2(fd, 1) < 0) {
+        exit(EXIT_FAILURE);
+      }
+      close(fd);
+      execv(command[0], command);
+      exit(EXIT_FAILURE);
+    } else {
+      // In parent process
+      wait(&status);
+      close(fd);
+      if (status != 0) {
+        return false;
+      }
+    }
+
+    va_end(args); 
 
     return true;
 }
