@@ -1,10 +1,11 @@
 #include "systemcalls.h"
-#include <stdio.h>
 #include <stdlib.h>
+#include <errno.h>
+#include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
-#include <fcntl.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 
 /**
  * @param cmd the command to execute with system()
@@ -15,15 +16,17 @@
 */
 bool do_system(const char *cmd)
 {
+	int ret;
 
-/*
- * TODO  add your code here
- *  Call the system() function with the command set in the cmd
- *   and return a boolean true if the system() call completed with success
- *   or false() if it returned a failure
-*/
-    int ret = system(cmd);
-    if (ret == -1) return false;
+	if (cmd == NULL) {
+		return false;
+	}
+
+	ret = system(cmd);
+	if ((WIFEXITED(ret)) && (WEXITSTATUS(ret) != 0)) {
+		return false;
+	}
+
     return true;
 }
 
@@ -65,27 +68,26 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *
 */
-    pid_t childpid;
-    int status;
+	int ret = 0;
+	int status = 0;
 
-    childpid = fork();
+	ret = fork();
+	if (ret == 0) {
+		ret = execv(command[0], &command[0]);
+		if (ret < 0) {
+			printf("[do_exec] Exec failed with %d %s\n", errno, strerror(errno));
+			exit(1);
+		}
+	} else if (ret < 0) {
+		printf("[do_exec] Fork failed with %d %s\n", errno, strerror(errno));
+		return false;
+	}
 
-    if (childpid < 0) {
-      // fork failed
-      exit(EXIT_FAILURE);
-    } else if (childpid == 0) {
-      // In child process
-      int ret = execv(command[0], command);
-      // printf("ret: %d\n", ret);
-      if (ret == -1) exit(EXIT_FAILURE);
-    } else {
-      // In parent process
-      wait(&status);
-      // printf("status: %d\n", status);
-      if (status != 0) {
-        return false;
-      }
-    }
+	ret = wait(&status);
+	if ((WIFEXITED(status)) && (WEXITSTATUS(status) != 0)) {
+		printf("[do_exec] Wait status returned error\n");
+		return false;
+	}
 
     va_end(args);
 
@@ -121,34 +123,37 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *
 */
 
-    pid_t childpid;
-    int status;
+	int ret = 0;
+	int status = 0;
 
-    int fd = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0644);
+	ret = fork();
+	if (ret == 0) {
+		int fd = open(outputfile, O_WRONLY, 0644);
+		if (fd < 0) {
+			printf("[do_exec_redirect] Failed to open file\n");
+			exit(1);
+		}
 
-    childpid = fork();
+		dup2(fd, 1);
+		close(fd);
 
-    if (childpid < 0) {
-      // fork failed
-      exit(EXIT_FAILURE);
-    } else if (childpid == 0) {
-      // In child process
-      if (dup2(fd, 1) < 0) {
-        exit(EXIT_FAILURE);
-      }
-      close(fd);
-      execv(command[0], command);
-      exit(EXIT_FAILURE);
-    } else {
-      // In parent process
-      wait(&status);
-      close(fd);
-      if (status != 0) {
-        return false;
-      }
-    }
+		ret = execv(command[0], &command[0]);
+		if (ret < 0) {
+			printf("[do_exec] Exec failed with %d %s\n", errno, strerror(errno));
+			exit(2);
+		}
+	} else if (ret < 0) {
+		printf("[do_exec] Fork failed with %d %s\n", errno, strerror(errno));
+		return false;
+	}
 
-    va_end(args); 
+	ret = wait(&status);
+	if ((WIFEXITED(status)) && (WEXITSTATUS(status) != 0)) {
+		printf("[do_exec] Wait status returned error\n");
+		return false;
+	}
+
+    va_end(args);
 
     return true;
 }
